@@ -1,0 +1,1841 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CLI Console</title>
+<style>
+  /* ===== 基础变量与全局（暗色简洁主题，系统字体栈） ===== */
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1d212b;
+    --border: #2a2f3c;
+    --text: #e6e9ef;
+    --muted: #8a93a5;
+    --accent: #4f8cff;
+    --danger: #ff6b6b;
+    --ok: #3ecf8e;
+    --radius: 8px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  button {
+    font: inherit;
+    color: var(--text);
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 6px 14px;
+    cursor: pointer;
+    transition: background .15s, border-color .15s;
+  }
+  button:hover { background: #242a37; border-color: #3a4152; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { background: #3f7bef; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--panel-2); padding: 1px 6px; border-radius: 4px; }
+
+  /* ===== 顶部状态栏 ===== */
+  #topbar {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 18px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  #topbar .brand { font-weight: 700; font-size: 16px; letter-spacing: .5px; }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--panel-2);
+    color: var(--muted);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .badge .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .badge .dot.green { background: var(--ok); }
+  .badge .dot.gray { background: #5a6274; }
+  .workdir-box {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-left: auto;
+    min-width: 0;
+  }
+  #workdir-label {
+    color: var(--muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    max-width: 46vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ===== Tab 导航与面板 ===== */
+  #tabs {
+    display: flex;
+    gap: 4px;
+    padding: 8px 18px 0;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+  }
+  #tabs .tab {
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    padding: 8px 16px;
+    border-radius: var(--radius) var(--radius) 0 0;
+    border-bottom: 2px solid transparent;
+  }
+  #tabs .tab:hover { color: var(--text); background: transparent; }
+  #tabs .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  main { padding: 20px 18px; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 22px;
+    max-width: 760px;
+  }
+  .card h2 { font-size: 17px; margin-bottom: 10px; }
+  .card p, .card li { color: var(--muted); }
+  .hint {
+    margin: 12px 0;
+    padding: 10px 12px;
+    background: var(--panel-2);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    word-break: break-all;
+  }
+  .card ul { padding-left: 20px; }
+  .placeholder { color: var(--muted); text-align: center; padding: 60px 0; font-size: 15px; }
+
+  /* ===== 目录选择弹窗 ===== */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, .55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+  }
+  .overlay.hidden { display: none; }
+  .dialog {
+    width: 560px;
+    max-width: 92vw;
+    max-height: 84vh;
+    overflow: auto;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, .5);
+  }
+  .dialog-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    font-weight: 700;
+  }
+  .dialog-sub {
+    color: var(--muted);
+    font-size: 12px;
+    margin: 12px 0 6px;
+    text-transform: none;
+  }
+  .browse-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 6px 10px;
+    margin-bottom: 6px;
+  }
+  #browse-path {
+    flex: 1;
+    min-width: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .list { list-style: none; max-height: 200px; overflow: auto; }
+  .list li {
+    padding: 7px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    word-break: break-all;
+  }
+  .list li:hover { background: var(--panel-2); }
+  .list li .ico { color: var(--accent); margin-right: 6px; }
+  .list li.muted { color: var(--muted); cursor: default; font-family: inherit; }
+  .list li.muted:hover { background: transparent; }
+  .dialog-foot {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 14px;
+    gap: 10px;
+  }
+
+  /* ===== Toast 提示 ===== */
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 32px;
+    transform: translateX(-50%);
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 18px;
+    max-width: 70vw;
+    z-index: 200;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .45);
+    word-break: break-all;
+  }
+  .toast.error { border-color: var(--danger); color: var(--danger); }
+  .toast.hidden { display: none; }
+
+  /* ===== Dashboard 扫描卡片 ===== */
+  .dash-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    max-width: 1100px;
+  }
+  #dash-workdir { flex: 1; margin: 0; min-width: 0; }
+  .dash-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 14px;
+    max-width: 1100px;
+  }
+  .dash-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+  }
+  .dash-card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .dash-card-head h3 { font-size: 14px; margin-right: auto; }
+  .dash-count {
+    font-size: 12px;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 1px 8px;
+    white-space: nowrap;
+  }
+  .dash-cand {
+    font-size: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    word-break: break-all;
+    margin-bottom: 8px;
+    color: var(--ok);
+  }
+  .dash-cand.miss { color: var(--muted); }
+  .dash-files { list-style: none; max-height: 160px; overflow: auto; }
+  .dash-files li {
+    padding: 5px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    word-break: break-all;
+  }
+  .dash-files li:hover { background: var(--panel-2); }
+  .dash-empty { color: var(--muted); font-size: 12px; padding: 4px 0; }
+
+  /* ===== Web 终端（管道模式） ===== */
+  .term-hint {
+    margin-bottom: 12px;
+    padding: 8px 12px;
+    background: var(--panel-2);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    color: var(--muted);
+    font-size: 12px;
+    max-width: 1100px;
+  }
+  .term-bar { display: flex; align-items: flex-end; gap: 10px; max-width: 1100px; }
+  .term-tabs { display: flex; gap: 6px; flex: 1; overflow-x: auto; min-height: 30px; }
+  .term-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 12px;
+    border-radius: var(--radius) var(--radius) 0 0;
+    border: 1px solid var(--border);
+    border-bottom: none;
+    background: var(--panel-2);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  button.term-tab { padding: 5px 12px; cursor: pointer; }
+  .term-tab.active { background: var(--panel); color: var(--accent); }
+  .term-tab.dead { color: var(--muted); text-decoration: line-through; }
+  .term-tab.muted { color: var(--muted); border: none; background: transparent; }
+  .term-tab .x { cursor: pointer; color: var(--muted); padding: 0 2px; }
+  .term-tab .x:hover { color: var(--danger); }
+  .term-actions { display: flex; gap: 8px; padding-bottom: 4px; }
+  .term-views { max-width: 1100px; }
+  .term-view {
+    display: none;
+    flex-direction: column;
+    border: 1px solid var(--border);
+    border-radius: 0 var(--radius) var(--radius) var(--radius);
+    background: #0b0d11;
+  }
+  .term-view.active { display: flex; }
+  .term-out {
+    height: 420px;
+    overflow: auto;
+    margin: 0;
+    padding: 12px 14px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12.5px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: var(--text);
+  }
+  .term-view.dead .term-out { color: var(--muted); }
+  .term-input-bar {
+    display: flex;
+    gap: 10px;
+    padding: 10px 12px;
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+    border-radius: 0 0 var(--radius) var(--radius);
+  }
+  .term-input-bar input {
+    flex: 1;
+    min-width: 0;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px;
+    padding: 7px 10px;
+    outline: none;
+  }
+  .term-input-bar input:focus { border-color: var(--accent); }
+
+  /* ===== 文件预览与定义编辑弹窗 ===== */
+  .dialog.wide { width: 720px; }
+  .dialog-title {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    word-break: break-all;
+    margin-bottom: 8px;
+  }
+  .dialog textarea {
+    width: 100%;
+    height: 340px;
+    background: #0b0d11;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    padding: 10px;
+    resize: vertical;
+    outline: none;
+  }
+  .dialog textarea:focus { border-color: var(--accent); }
+  .dialog pre {
+    max-height: 52vh;
+    overflow: auto;
+    margin: 0;
+    background: #0b0d11;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-all;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  /* ===== 管理页通用（Skills / MCP / Settings） ===== */
+  .manage-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    max-width: 1100px;
+  }
+  .manage-bar .hint { flex: 1; margin: 0; min-width: 0; }
+  .file-rows { max-width: 1100px; }
+  .file-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--panel);
+    margin-bottom: 6px;
+  }
+  .file-row .fname {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    word-break: break-all;
+    cursor: pointer;
+  }
+  .file-row .fname:hover { color: var(--accent); }
+  .file-row .fmeta { flex: 1; color: var(--muted); font-size: 12px; word-break: break-all; }
+  .row-actions { display: flex; gap: 6px; margin-left: auto; }
+  .row-actions button { padding: 3px 10px; font-size: 12px; }
+  .bak-hint { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+  .edit-area {
+    display: block;
+    width: 100%;
+    max-width: 1100px;
+    height: 380px;
+    background: #0b0d11;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    padding: 10px;
+    resize: vertical;
+    outline: none;
+  }
+  .edit-area:focus { border-color: var(--accent); }
+  .edit-area:disabled { opacity: .5; }
+  .settings-foot {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    max-width: 1100px;
+    margin-top: 10px;
+  }
+  .settings-foot .bak-hint { flex: 1; margin: 0; }
+  .form-grid {
+    display: grid;
+    grid-template-columns: 110px 1fr;
+    gap: 10px 12px;
+    align-items: center;
+    margin: 10px 0;
+  }
+  .form-grid label { color: var(--muted); font-size: 13px; }
+  .form-grid input, .form-grid textarea {
+    width: 100%;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-size: 13px;
+    padding: 7px 10px;
+    outline: none;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  .form-grid input:focus, .form-grid textarea:focus { border-color: var(--accent); }
+  #mcp-f-env { height: 90px; resize: vertical; }
+
+  /* ===== Tools：文件树 + 快捷命令 ===== */
+  .tools-grid {
+    display: grid;
+    grid-template-columns: minmax(280px, 400px) 1fr;
+    gap: 14px;
+    max-width: 1100px;
+    align-items: start;
+  }
+  .tool-box {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+  }
+  .tool-box h3 { font-size: 14px; margin-bottom: 10px; }
+  .tree-path {
+    color: var(--muted);
+    font-size: 11px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    word-break: break-all;
+    margin-bottom: 8px;
+  }
+  .tree {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    max-height: 460px;
+    overflow: auto;
+  }
+  .tree-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 6px;
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .tree-row:hover { background: var(--panel-2); }
+  .tree-row .tw { flex: none; width: 12px; color: var(--muted); }
+  .tree-row .tname { overflow: hidden; text-overflow: ellipsis; }
+  .tree-children.hidden { display: none; }
+  .cmd-list { display: flex; flex-direction: column; gap: 6px; }
+  .cmd-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--panel-2);
+    cursor: pointer;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+  }
+  .cmd-row:hover { border-color: var(--accent); }
+  .cmd-row .ccmd { word-break: break-all; }
+  .cmd-row .crun { color: var(--accent); white-space: nowrap; }
+</style>
+</head>
+<body>
+
+<!-- ===== 顶部状态栏：标题 / CLI 徽标 / 工作目录 ===== -->
+<header id="topbar">
+  <span class="brand">CLI Console</span>
+  <span id="cli-badge" class="badge"><span class="dot gray"></span>加载中…</span>
+  <div class="workdir-box">
+    <span id="workdir-label" title="">未选择工作目录</span>
+    <button id="btn-open-picker">选择目录</button>
+  </div>
+</header>
+
+<!-- ===== Tab 导航 ===== -->
+<nav id="tabs">
+  <button class="tab active" data-tab="dashboard">Dashboard</button>
+  <button class="tab" data-tab="terminal">Terminal</button>
+  <button class="tab" data-tab="skills">Skills</button>
+  <button class="tab" data-tab="mcp">MCP</button>
+  <button class="tab" data-tab="settings">Settings</button>
+  <button class="tab" data-tab="tools">Tools</button>
+</nav>
+
+<main>
+  <!-- Dashboard：项目扫描汇总（commands/skills/docs/mcp/settings 命中情况） -->
+  <section id="panel-dashboard" class="panel active">
+    <div class="dash-toolbar">
+      <div id="dash-workdir" class="hint">尚未选择工作目录，请点击右上角「选择目录」。</div>
+      <button id="btn-scan">重新扫描</button>
+      <button id="btn-definition">探测规则</button>
+    </div>
+    <div id="dash-cards" class="dash-cards"></div>
+  </section>
+
+  <!-- Terminal：管道模式终端（SSE 输出 + POST 输入） -->
+  <section id="panel-terminal" class="panel">
+    <div class="term-hint">管道模式：不支持 TUI 全屏程序；agent CLI 请用非交互命令（如 <code>agy -p "..."</code>）</div>
+    <div class="term-bar">
+      <div id="term-tabs" class="term-tabs"></div>
+      <div class="term-actions">
+        <button id="btn-term-shell">+ Shell</button>
+        <button id="btn-term-cli">+ agy</button>
+      </div>
+    </div>
+    <div id="term-views" class="term-views"></div>
+  </section>
+  <!-- Skills：列表 / 编辑 / 新建 / 删除（新建仅写入命中的 skills 目录） -->
+  <section id="panel-skills" class="panel">
+    <div class="manage-bar">
+      <div id="skills-hint" class="hint"></div>
+      <button id="btn-skills-refresh">刷新</button>
+      <button id="btn-skill-new" class="primary">新建 Skill</button>
+    </div>
+    <div id="skills-list" class="file-rows"></div>
+  </section>
+
+  <!-- MCP：servers 列表 / 新增 / 编辑 / 删除（写回前自动 .bak 备份） -->
+  <section id="panel-mcp" class="panel">
+    <div class="manage-bar">
+      <div id="mcp-hint" class="hint"></div>
+      <button id="btn-mcp-refresh">刷新</button>
+      <button id="btn-mcp-add" class="primary">新增 Server</button>
+    </div>
+    <div class="bak-hint">保存或删除条目时，原配置文件会自动备份为同目录 <code>.bak</code> 文件。</div>
+    <div id="mcp-list" class="file-rows"></div>
+  </section>
+
+  <!-- Settings：原文查看与编辑（客户端 + 服务端双重 JSON 校验，保存前备份） -->
+  <section id="panel-settings" class="panel">
+    <div class="manage-bar">
+      <div id="settings-hint" class="hint"></div>
+      <button id="btn-settings-reload">重新加载</button>
+    </div>
+    <textarea id="settings-textarea" class="edit-area" spellcheck="false" placeholder="settings 文件的 JSON 原文"></textarea>
+    <div class="settings-foot">
+      <span class="bak-hint">保存成功后原文件自动备份为 <code>.bak</code>；JSON 校验失败不会写入。</span>
+      <button id="btn-settings-save" class="primary">校验并保存</button>
+    </div>
+  </section>
+
+  <!-- Tools：左侧懒加载文件树 + 右侧快捷命令（git 与 package.json scripts） -->
+  <section id="panel-tools" class="panel">
+    <div class="tools-grid">
+      <div class="tool-box">
+        <h3>文件树（只读，点击目录展开）</h3>
+        <div id="tree-path" class="tree-path"></div>
+        <div id="file-tree" class="tree"></div>
+      </div>
+      <div class="tool-box">
+        <h3>快捷命令（点击在终端会话中执行）</h3>
+        <div id="quick-cmds" class="cmd-list"></div>
+        <h3 style="margin-top:16px;">package.json scripts</h3>
+        <div id="scripts-list" class="cmd-list"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ===== 目录选择弹窗（最近目录 + 逐级浏览） ===== -->
+<div id="picker-overlay" class="overlay hidden">
+  <div class="dialog">
+    <div class="dialog-head">
+      <span>选择工作目录</span>
+      <button id="btn-picker-close">关闭</button>
+    </div>
+    <div class="dialog-sub">最近目录</div>
+    <ul id="recents-list" class="list"></ul>
+    <div class="dialog-sub">浏览</div>
+    <div class="browse-bar">
+      <span id="browse-path"></span>
+      <button id="btn-up">上一级</button>
+    </div>
+    <ul id="dirs-list" class="list"></ul>
+    <div class="dialog-foot">
+      <button id="btn-confirm-select" class="primary">选择当前目录</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 文件内容预览弹窗（只读） ===== -->
+<div id="file-overlay" class="overlay hidden">
+  <div class="dialog wide">
+    <div class="dialog-head">
+      <span>文件预览（只读）</span>
+      <button id="btn-file-close">关闭</button>
+    </div>
+    <div id="file-title" class="dialog-title"></div>
+    <pre id="file-content"></pre>
+  </div>
+</div>
+
+<!-- ===== 探测规则（definition）编辑弹窗 ===== -->
+<div id="def-overlay" class="overlay hidden">
+  <div class="dialog wide">
+    <div class="dialog-head">
+      <span>探测规则（definition JSON）</span>
+      <button id="btn-def-close">关闭</button>
+    </div>
+    <div class="dialog-sub">保存为用户级覆盖文件 ~/.cli-console/definitions/agy.json（未覆盖字段沿用内嵌默认），保存后立即重新扫描。</div>
+    <textarea id="def-textarea" spellcheck="false"></textarea>
+    <div class="dialog-foot">
+      <button id="btn-def-save" class="primary">保存并重新扫描</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Skill 查看/编辑弹窗（textarea + 保存） ===== -->
+<div id="edit-overlay" class="overlay hidden">
+  <div class="dialog wide">
+    <div class="dialog-head">
+      <span id="edit-title">编辑 Skill</span>
+      <button id="btn-edit-close">关闭</button>
+    </div>
+    <div id="edit-path" class="dialog-title"></div>
+    <textarea id="edit-textarea" spellcheck="false"></textarea>
+    <div class="dialog-foot">
+      <button id="btn-edit-save" class="primary">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MCP 条目新增/编辑弹窗 ===== -->
+<div id="mcp-form-overlay" class="overlay hidden">
+  <div class="dialog">
+    <div class="dialog-head">
+      <span id="mcp-form-title">新增 MCP Server</span>
+      <button id="btn-mcp-form-close">关闭</button>
+    </div>
+    <div class="form-grid">
+      <label>名称 name</label><input id="mcp-f-name" type="text" placeholder="如 filesystem">
+      <label>命令 command</label><input id="mcp-f-command" type="text" placeholder="如 npx">
+      <label>参数 args</label><input id="mcp-f-args" type="text" placeholder="逗号分隔，如 -y,server-fs,/tmp">
+      <label>环境变量 env</label><textarea id="mcp-f-env" placeholder="每行一个 KEY=VALUE"></textarea>
+    </div>
+    <div class="dialog-foot">
+      <button id="btn-mcp-form-save" class="primary">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast hidden"></div>
+
+<script>
+'use strict';
+
+// ============================================================
+// 工具：escapeHtml / api 封装 / toast
+// ============================================================
+
+/** HTML 转义，防止路径等内容注入页面 */
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+
+/** fetch 封装：非 2xx 时抛出后端返回的中文 error 信息 */
+async function api(path, opts) {
+  opts = opts || {};
+  var init = { method: opts.method || 'GET', headers: {} };
+  if (opts.body !== undefined) {
+    init.headers['Content-Type'] = 'application/json';
+    init.body = JSON.stringify(opts.body);
+  }
+  var res = await fetch(path, init);
+  var data = null;
+  try { data = await res.json(); } catch (_) { /* 非 JSON 响应则忽略 */ }
+  if (!res.ok) {
+    throw new Error((data && data.error) || ('请求失败（HTTP ' + res.status + '）'));
+  }
+  return data;
+}
+
+var toastTimer = null;
+/** 统一 toast 提示；isError 为 true 时红色警示样式 */
+function showToast(msg, isError) {
+  var el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.toggle('error', !!isError);
+  el.classList.remove('hidden');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { el.classList.add('hidden'); }, 3000);
+}
+
+// ============================================================
+// 全局状态
+// ============================================================
+
+var state = {
+  workdir: { current: null, recents: [] },
+  clis: []
+};
+var browsePath = null;   // 弹窗当前浏览目录
+var browseParent = null; // 弹窗上一级目录（根目录时与自身相同）
+var dashScan = null;     // 最近一次项目扫描结果（/api/scan 的 categories）
+var dashDef = null;      // 最近一次生效的 definition（用于空态候选提示）
+var termSessions = [];   // 终端会话列表 [{ id, kind, cmd, cwd, alive }]
+var termActiveId = null; // 当前激活的终端会话 id
+var termViews = {};      // sessionId → { root, out, input, killBtn, es, exitShown }
+var skillsDir = null;    // 命中的 skills 目录（新建 skill 的落点，来自 /api/scan）
+var mcpData = null;      // 最近一次 GET /api/mcp 结果
+var editPath = null;     // Skill 编辑弹窗当前对应的文件路径
+var mcpEditingName = null; // MCP 表单正在编辑的条目名（null 为新增）
+var toolsWorkdir = null; // Tools 面板已加载时的工作目录（变化后重建）
+
+// ============================================================
+// 渲染：状态栏 / Dashboard / 弹窗
+// ============================================================
+
+/** 顶部状态栏：CLI 徽标 + 工作目录 */
+function renderStatusbar() {
+  var badge = document.getElementById('cli-badge');
+  var cli = state.clis.length ? state.clis[0] : null;
+  if (!cli) {
+    badge.innerHTML = '<span class="dot gray"></span>无可用 CLI';
+  } else if (cli.installed) {
+    badge.innerHTML = '<span class="dot green"></span>' + escapeHtml(cli.name) + ' · 已安装';
+  } else {
+    badge.innerHTML = '<span class="dot gray"></span>' + escapeHtml(cli.name) + ' · 未检测到';
+  }
+  var label = document.getElementById('workdir-label');
+  if (state.workdir.current) {
+    label.textContent = state.workdir.current;
+    label.title = state.workdir.current;
+  } else {
+    label.textContent = '未选择工作目录';
+    label.title = '';
+  }
+}
+
+/** Dashboard 工作目录提示 */
+function renderDashboard() {
+  var el = document.getElementById('dash-workdir');
+  el.textContent = state.workdir.current
+    ? '当前工作目录：' + state.workdir.current
+    : '尚未选择工作目录，请点击右上角「选择目录」。';
+}
+
+/** 弹窗「最近目录」列表 */
+function renderRecents() {
+  var ul = document.getElementById('recents-list');
+  var recents = state.workdir.recents || [];
+  if (!recents.length) {
+    ul.innerHTML = '<li class="muted">暂无最近目录</li>';
+    return;
+  }
+  ul.innerHTML = recents.map(function (r) {
+    return '<li data-path="' + escapeHtml(r.path) + '"><span class="ico">▸</span>' + escapeHtml(r.path) + '</li>';
+  }).join('');
+}
+
+/** 弹窗「浏览」区：当前路径 + 子目录列表 */
+function renderBrowse() {
+  document.getElementById('browse-path').textContent = browsePath || '';
+  document.getElementById('browse-path').title = browsePath || '';
+  document.getElementById('btn-up').disabled = !browseParent || browseParent === browsePath;
+  var ul = document.getElementById('dirs-list');
+  ul.innerHTML = '';
+}
+
+// ============================================================
+// 目录选择弹窗逻辑
+// ============================================================
+
+function openPicker() {
+  document.getElementById('picker-overlay').classList.remove('hidden');
+  renderRecents();
+  browseTo(null); // 缺省从主目录开始浏览
+}
+
+function closePicker() {
+  document.getElementById('picker-overlay').classList.add('hidden');
+}
+
+/** 浏览目录：path 为空时由后端从主目录开始 */
+async function browseTo(path) {
+  try {
+    var url = '/api/workdir/browse' + (path ? ('?path=' + encodeURIComponent(path)) : '');
+    var data = await api(url);
+    browsePath = data.path;
+    browseParent = data.parent;
+    renderBrowse();
+    var ul = document.getElementById('dirs-list');
+    if (!data.dirs.length) {
+      ul.innerHTML = '<li class="muted">（无子目录）</li>';
+      return;
+    }
+    // 子目录进入：统一用「/」拼接，后端 path.resolve 会归一化为平台格式
+    ul.innerHTML = data.dirs.map(function (name) {
+      var child = data.path.replace(/[\\/]+$/, '') + '/' + name;
+      return '<li data-path="' + escapeHtml(child) + '"><span class="ico">▸</span>' + escapeHtml(name) + '</li>';
+    }).join('');
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+/** 确认选择某个目录：调 select API，更新全局状态并刷新界面 */
+async function selectPath(path) {
+  try {
+    var data = await api('/api/workdir/select', { method: 'POST', body: { path: path } });
+    state.workdir = data;
+    closePicker();
+    renderStatusbar();
+    renderDashboard();
+    renderRecents();
+    toolsWorkdir = null; // 工作目录变化后 Tools 面板需重建
+    loadDashboard(); // 工作目录变化后重新扫描 Dashboard
+    // 若当前停留在管理页，立即按新目录刷新
+    var activeTab = document.querySelector('#tabs .tab.active');
+    if (activeTab && activeTab.dataset.tab !== 'dashboard') onTabShown(activeTab.dataset.tab);
+    showToast('工作目录已设置：' + data.current);
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+// ============================================================
+// Dashboard 项目扫描（GET /api/scan）
+// ============================================================
+
+/** Dashboard 卡片元信息：key 对应 /api/scan 的分类键，tab 为「去管理」跳转目标 */
+var DASH_META = [
+  { key: 'commands', title: 'Commands（命令）', tab: null },
+  { key: 'skills', title: 'Skills（技能）', tab: 'skills' },
+  { key: 'docs', title: 'Docs（文档）', tab: null },
+  { key: 'mcp', title: 'MCP 配置', tab: 'mcp' },
+  { key: 'settings', title: 'Settings（设置）', tab: 'settings' }
+];
+
+/** 切换到指定 Tab（供「去管理」按钮复用） */
+function switchTab(name) {
+  var btn = document.querySelector('#tabs .tab[data-tab="' + name + '"]');
+  if (btn) btn.click();
+}
+
+/** 面板显示时按需加载（Tab 点击与工作目录切换后复用） */
+function onTabShown(name) {
+  if (name === 'skills') loadSkills();
+  else if (name === 'mcp') loadMcp();
+  else if (name === 'settings') loadSettings();
+  else if (name === 'tools') initTools();
+}
+
+/** 分类条目统一为 [{ name, path }]；mcp/settings 附带 files（绝对路径数组） */
+function dashItems(cat) {
+  if (!cat) return [];
+  if (Array.isArray(cat.items)) return cat.items;
+  return (cat.files || []).map(function (p) {
+    var parts = String(p).split(/[\\/]/);
+    return { name: parts[parts.length - 1], path: p };
+  });
+}
+
+/** 空态提示：从生效 definition 取该类候选路径列表 */
+function dashHint(key) {
+  var cand = dashDef && dashDef.candidates && dashDef.candidates[key];
+  if (!cand) return '';
+  var list = [];
+  if (Array.isArray(cand.dirs)) list = list.concat(cand.dirs);
+  if (Array.isArray(cand.files)) list = list.concat(cand.files);
+  return list.join('、');
+}
+
+/** 拉取扫描结果与生效定义并渲染 Dashboard 卡片 */
+async function loadDashboard() {
+  var cards = document.getElementById('dash-cards');
+  if (!state.workdir.current) {
+    dashScan = null;
+    dashDef = null;
+    cards.innerHTML = '<div class="dash-empty">尚未选择工作目录，请点击右上角「选择目录」后再扫描。</div>';
+    return;
+  }
+  try {
+    var results = await Promise.all([api('/api/scan'), api('/api/definition')]);
+    dashScan = results[0].categories;
+    dashDef = results[1].definition;
+    renderDashCards();
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+/** 渲染五类配置的扫描卡片：命中数量 + 候选命中/空态提示 + 文件列表 */
+function renderDashCards() {
+  var cards = document.getElementById('dash-cards');
+  if (!dashScan) {
+    cards.innerHTML = '<div class="dash-empty">暂无扫描结果，请点击「重新扫描」。</div>';
+    return;
+  }
+  var html = '';
+  DASH_META.forEach(function (meta) {
+    var cat = dashScan[meta.key] || {};
+    var items = dashItems(cat);
+    var candHtml = cat.candidate
+      ? '<div class="dash-cand">已命中：' + escapeHtml(cat.candidate) + '</div>'
+      : '<div class="dash-cand miss">未找到，可放置于: ' + escapeHtml(dashHint(meta.key) || '（定义中未配置候选路径）') + '</div>';
+    var listHtml = items.length
+      ? '<ul class="dash-files">' + items.map(function (it) {
+          return '<li data-path="' + escapeHtml(it.path) + '" title="点击查看内容">' + escapeHtml(it.name) + '</li>';
+        }).join('') + '</ul>'
+      : '<div class="dash-empty">（暂无文件）</div>';
+    var manageBtn = meta.tab
+      ? '<button data-manage="' + meta.tab + '">去管理</button>'
+      : '<button disabled title="本版仅支持查看">仅查看</button>';
+    html += '<div class="dash-card">'
+      + '<div class="dash-card-head"><h3>' + meta.title + '</h3>'
+      + '<span class="dash-count">命中 ' + items.length + '</span>' + manageBtn + '</div>'
+      + candHtml + listHtml
+      + '</div>';
+  });
+  cards.innerHTML = html;
+}
+
+// ============================================================
+// 文件内容预览（GET /api/file）与探测规则编辑（PUT /api/definition）
+// ============================================================
+
+function closeFilePreview() {
+  document.getElementById('file-overlay').classList.add('hidden');
+}
+
+/** 只读预览某个文件内容 */
+async function openFilePreview(filePath) {
+  try {
+    var data = await api('/api/file?path=' + encodeURIComponent(filePath));
+    document.getElementById('file-title').textContent = filePath;
+    document.getElementById('file-content').textContent = data.content;
+    document.getElementById('file-overlay').classList.remove('hidden');
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+function closeDefinition() {
+  document.getElementById('def-overlay').classList.add('hidden');
+}
+
+/** 打开探测规则编辑弹窗（展示当前生效 definition JSON） */
+async function openDefinition() {
+  try {
+    var data = await api('/api/definition');
+    document.getElementById('def-textarea').value = JSON.stringify(data.definition, null, 2);
+    document.getElementById('def-overlay').classList.remove('hidden');
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+/** 保存探测规则（写入用户级覆盖），成功后重新扫描；覆盖非法时给出警告 */
+async function saveDefinition() {
+  var text = document.getElementById('def-textarea').value;
+  var body;
+  try {
+    body = JSON.parse(text);
+  } catch (e) {
+    showToast('JSON 解析失败：' + e.message, true);
+    return;
+  }
+  try {
+    var data = await api('/api/definition', { method: 'PUT', body: body });
+    closeDefinition();
+    if (data.meta && data.meta.overrideInvalid) {
+      showToast('警告：用户覆盖文件非法，已回退内嵌默认定义', true);
+    } else {
+      showToast('探测规则已保存，扫描已更新');
+    }
+    await loadDashboard();
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+// ============================================================
+// Web 终端（管道模式）：SSE 输出 + POST 输入 + kill
+// ============================================================
+
+/** 按 id 查找本地会话对象 */
+function findTermSession(id) {
+  for (var i = 0; i < termSessions.length; i++) {
+    if (termSessions[i].id === id) return termSessions[i];
+  }
+  return null;
+}
+
+/** 标签文字 */
+function termLabel(s) {
+  return s.kind === 'shell' ? 'Shell' : 'agy';
+}
+
+/** 关闭某视图的 EventSource（旧连接必须显式 close） */
+function closeTermEs(v) {
+  if (v.es) {
+    v.es.close();
+    v.es = null;
+  }
+}
+
+/** 销毁视图 DOM 并断开事件流 */
+function destroyTermView(id) {
+  var v = termViews[id];
+  if (!v) return;
+  closeTermEs(v);
+  if (v.root.parentNode) v.root.parentNode.removeChild(v.root);
+  delete termViews[id];
+}
+
+/** 为会话创建输出视图（pre + 单行输入 + 终止按钮），并绑定事件 */
+function ensureTermView(s) {
+  var v = termViews[s.id];
+  if (v) return v;
+  var hint = document.getElementById('term-empty-hint');
+  if (hint && hint.parentNode) hint.parentNode.removeChild(hint);
+  var root = document.createElement('div');
+  root.className = 'term-view';
+  var pre = document.createElement('pre');
+  pre.className = 'term-out';
+  var bar = document.createElement('div');
+  bar.className = 'term-input-bar';
+  var input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = '输入命令，回车发送（管道模式）';
+  input.spellcheck = false;
+  var killBtn = document.createElement('button');
+  killBtn.textContent = '终止会话';
+  bar.appendChild(input);
+  bar.appendChild(killBtn);
+  root.appendChild(pre);
+  root.appendChild(bar);
+  document.getElementById('term-views').appendChild(root);
+  v = { root: root, out: pre, input: input, killBtn: killBtn, es: null, exitShown: false };
+  termViews[s.id] = v;
+  // 回车发送：{ data: 输入 + '\n' }，发送后清空输入框
+  input.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Enter') return;
+    var data = input.value + '\n';
+    input.value = '';
+    api('/api/term/' + encodeURIComponent(s.id) + '/input', { method: 'POST', body: { data: data } })
+      .catch(function (e) { showToast(e.message, true); });
+  });
+  killBtn.addEventListener('click', function () { killTermSession(s.id); });
+  return v;
+}
+
+/** 建立 SSE 连接：每次激活都重建（旧连接先 close），输出追加并自动滚底 */
+function attachTermStream(s, v) {
+  closeTermEs(v);
+  v.out.textContent = ''; // 服务端会在连接建立时先回放完整缓存
+  var es = new EventSource('/api/term/' + encodeURIComponent(s.id) + '/stream');
+  v.es = es;
+  es.addEventListener('out', function (e) {
+    v.out.textContent += e.data; // 多行 data 由浏览器按 SSE 规则还原为换行
+    v.out.scrollTop = v.out.scrollHeight;
+  });
+  es.addEventListener('exit', function (e) {
+    es.close();
+    v.es = null;
+    markTermExit(s, '[进程已退出 code=' + e.data + ']');
+  });
+  es.onerror = function () {
+    // 连接永久失败（如会话已被服务端回收为 404）：标记退出，避免反复重连
+    if (es.readyState === 2) { // EventSource.CLOSED
+      markTermExit(s, '[会话已结束]');
+    }
+  };
+}
+
+/** 标记会话退出：刷新标签态并追加退出提示（exitShown 去重） */
+function markTermExit(s, msg) {
+  s.alive = false;
+  renderTermTabs();
+  var v = termViews[s.id];
+  if (v && !v.exitShown) {
+    v.exitShown = true;
+    v.out.textContent += '\n' + msg + '\n';
+    v.out.scrollTop = v.out.scrollHeight;
+  }
+}
+
+/** 渲染会话标签栏，并同步各视图显隐与可用状态 */
+function renderTermTabs() {
+  var bar = document.getElementById('term-tabs');
+  var views = document.getElementById('term-views');
+  if (!termSessions.length) {
+    bar.innerHTML = '<span class="term-tab muted">暂无会话</span>';
+    Object.keys(termViews).forEach(destroyTermView);
+    views.innerHTML = '<div id="term-empty-hint" class="dash-empty">暂无终端会话，点击「+ Shell」或「+ agy」新建。</div>';
+    termActiveId = null;
+    return;
+  }
+  bar.innerHTML = termSessions.map(function (s) {
+    var cls = 'term-tab' + (s.id === termActiveId ? ' active' : '') + (s.alive ? '' : ' dead');
+    return '<button class="' + cls + '" data-id="' + s.id + '" title="' + escapeHtml(s.cmd) + '（' + escapeHtml(s.cwd) + '）">'
+      + escapeHtml(termLabel(s)) + '<span class="x" data-x="' + s.id + '" title="关闭标签并终止会话">×</span></button>';
+  }).join('');
+  termSessions.forEach(function (s) {
+    var v = ensureTermView(s);
+    v.root.classList.toggle('active', s.id === termActiveId);
+    v.root.classList.toggle('dead', !s.alive);
+    v.input.disabled = !s.alive;
+    v.killBtn.disabled = !s.alive;
+    v.killBtn.textContent = s.alive ? '终止会话' : '已退出';
+  });
+}
+
+/** 激活某会话：重建事件流（服务端回放缓存）并聚焦输入框 */
+function activateTermSession(id) {
+  var s = findTermSession(id);
+  if (!s) return;
+  termActiveId = id;
+  var v = ensureTermView(s);
+  renderTermTabs();
+  if (s.alive) {
+    attachTermStream(s, v);
+    v.input.focus();
+  } else {
+    markTermExit(s, '[会话已结束]');
+  }
+}
+
+/** 新建会话（kind: 'shell' | 'cli'）并自动激活 */
+async function createTermSession(kind) {
+  try {
+    var data = await api('/api/term', { method: 'POST', body: { kind: kind } });
+    termSessions.push({ id: data.sessionId, kind: data.kind, cmd: data.cmd, cwd: data.cwd, alive: true });
+    renderTermTabs();
+    activateTermSession(data.sessionId);
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+/** 终止会话（后端 SIGTERM→SIGKILL）；本地立即标记退出，退出事件随后确认 */
+async function killTermSession(id) {
+  try {
+    await api('/api/term/' + encodeURIComponent(id) + '/kill', { method: 'POST' });
+  } catch (e) {
+    // 会话可能已自行退出（404）：静默；其余错误提示
+    if (e.message.indexOf('不存在') === -1) showToast(e.message, true);
+  }
+  var s = findTermSession(id);
+  if (s) markTermExit(s, '[会话已终止]');
+}
+
+/** 关闭标签：销毁视图并请求后端兜底终止 */
+function closeTermSession(id) {
+  destroyTermView(id);
+  termSessions = termSessions.filter(function (s) { return s.id !== id; });
+  if (termActiveId === id) {
+    termActiveId = termSessions.length ? termSessions[0].id : null;
+  }
+  renderTermTabs();
+  if (termActiveId) activateTermSession(termActiveId);
+  api('/api/term/' + encodeURIComponent(id) + '/kill', { method: 'POST' }).catch(function () {});
+}
+
+/** 刷新会话列表（页面加载/恢复标签用；输出随重新连接回放） */
+async function refreshTermList() {
+  var data;
+  try {
+    data = await api('/api/term');
+  } catch (e) {
+    return;
+  }
+  var fresh = data.sessions || [];
+  var aliveIds = {};
+  fresh.forEach(function (s) { aliveIds[s.id] = true; });
+  Object.keys(termViews).forEach(function (id) {
+    if (!aliveIds[id]) destroyTermView(id);
+  });
+  termSessions = fresh;
+  var stillActive = termSessions.some(function (s) { return s.id === termActiveId; });
+  if (!stillActive) {
+    termActiveId = termSessions.length ? termSessions[0].id : null;
+  }
+  renderTermTabs();
+  if (termActiveId) activateTermSession(termActiveId);
+}
+
+// ============================================================
+// Skills 管理：列表来自 /api/scan；编辑/新建/删除走 POST/DELETE /api/file
+// 前端限定：新建仅写入命中的 skills 目录；名称白名单防路径注入
+// ============================================================
+
+/** 新建 skill 名称合法性：仅字母数字与 - _ .（防路径注入） */
+function isValidSkillName(name) {
+  return /^[A-Za-z0-9._-]+$/.test(name);
+}
+
+/** 新建 skill 的初始 Markdown 模板 */
+function skillTemplate(name) {
+  return '# ' + name + '\n\n'
+    + '> 描述：这个 Skill 做什么、什么时候使用。\n\n'
+    + '## 用法\n\n'
+    + '1. 步骤一\n'
+    + '2. 步骤二\n\n'
+    + '## 示例\n\n'
+    + '```\n示例命令或内容\n```\n';
+}
+
+/** 加载 Skills 列表（每次进入 Tab 或操作后刷新；目录与文件均来自 /api/scan） */
+async function loadSkills() {
+  var hint = document.getElementById('skills-hint');
+  var list = document.getElementById('skills-list');
+  if (!state.workdir.current) {
+    skillsDir = null;
+    hint.textContent = '尚未选择工作目录。';
+    list.innerHTML = '';
+    return;
+  }
+  try {
+    var data = await api('/api/scan');
+    var cat = (data.categories && data.categories.skills) || {};
+    skillsDir = cat.candidate || null;
+    if (!dashDef) {
+      try { dashDef = (await api('/api/definition')).definition; } catch (_) { /* 提示兜底时忽略 */ }
+    }
+    hint.textContent = skillsDir
+      ? 'Skills 目录：' + skillsDir
+      : '未找到 skills 目录，可放置于: ' + (dashHint('skills') || '（定义中未配置候选路径）');
+    var items = Array.isArray(cat.items) ? cat.items : [];
+    if (!items.length) {
+      list.innerHTML = '<div class="dash-empty">（暂无 skill 文件'
+        + (skillsDir ? '' : '，请先按候选路径创建目录并放入 .md 文件') + '）</div>';
+      return;
+    }
+    list.innerHTML = items.map(function (it) {
+      return '<div class="file-row" data-path="' + escapeHtml(it.path) + '">'
+        + '<span class="fname" title="点击查看/编辑">' + escapeHtml(it.name) + '</span>'
+        + '<span class="row-actions"><button data-del="' + escapeHtml(it.path) + '">删除</button></span>'
+        + '</div>';
+    }).join('');
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+function closeEditDialog() {
+  document.getElementById('edit-overlay').classList.add('hidden');
+  editPath = null;
+}
+
+/** 打开 Skill 编辑弹窗（GET /api/file 取原文） */
+async function openSkillEditor(filePath) {
+  try {
+    var data = await api('/api/file?path=' + encodeURIComponent(filePath));
+    editPath = data.path;
+    document.getElementById('edit-title').textContent = '编辑 Skill';
+    document.getElementById('edit-path').textContent = data.path;
+    document.getElementById('edit-textarea').value = data.content;
+    document.getElementById('edit-overlay').classList.remove('hidden');
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+/** 保存 Skill（POST /api/file）并刷新列表 */
+async function saveSkillEditor() {
+  if (!editPath) return;
+  try {
+    var data = await api('/api/file', {
+      method: 'POST',
+      body: { path: editPath, content: document.getElementById('edit-textarea').value }
+    });
+    closeEditDialog();
+    showToast('已保存：' + data.path);
+    loadSkills();
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+/** 新建 Skill：名称白名单校验 → 在命中目录下创建 <name>.md（模板内容，正斜杠由服务端归一化） */
+async function createSkill() {
+  if (!skillsDir) {
+    showToast('未找到 skills 目录，请先按候选路径创建目录后刷新', true);
+    return;
+  }
+  var name = prompt('请输入 Skill 名称（仅允许字母、数字与 - _ .）：');
+  if (name === null) return;
+  name = name.trim();
+  if (!isValidSkillName(name)) {
+    showToast('名称非法：仅允许字母、数字与 - _ .', true);
+    return;
+  }
+  var filePath = skillsDir.replace(/[\\/]+$/, '') + '/' + name + '.md';
+  try {
+    await api('/api/file?path=' + encodeURIComponent(filePath)); // GET 成功说明同名文件已存在
+    showToast('同名文件已存在：' + filePath, true);
+    return;
+  } catch (e) {
+    if (e.message.indexOf('不存在') === -1) {
+      showToast(e.message, true);
+      return;
+    }
+  }
+  try {
+    await api('/api/file', { method: 'POST', body: { path: filePath, content: skillTemplate(name) } });
+    showToast('已创建：' + filePath);
+    loadSkills();
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+/** 删除 Skill 文件（confirm 二次确认 → DELETE /api/file） */
+async function deleteSkill(filePath) {
+  if (!confirm('确认删除该 Skill 文件？\n' + filePath)) return;
+  try {
+    await api('/api/file?path=' + encodeURIComponent(filePath), { method: 'DELETE' });
+    showToast('已删除：' + filePath);
+    loadSkills();
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+// ============================================================
+// MCP 管理：GET /api/mcp 列表；PUT/DELETE /api/mcp/entry 增删改（自动 .bak 备份）
+// ============================================================
+
+/** 加载 MCP server 列表并渲染（name/command/args/env 摘要） */
+async function loadMcp() {
+  var hint = document.getElementById('mcp-hint');
+  var list = document.getElementById('mcp-list');
+  if (!state.workdir.current) {
+    mcpData = null;
+    hint.textContent = '尚未选择工作目录。';
+    list.innerHTML = '';
+    return;
+  }
+  try {
+    mcpData = await api('/api/mcp');
+    hint.textContent = mcpData.exists
+      ? '配置文件：' + mcpData.path
+      : '未找到 MCP 配置文件，保存条目时将创建于：' + (mcpData.path || '（定义中未配置候选路径）');
+    if (!mcpData.servers.length) {
+      list.innerHTML = '<div class="dash-empty">（暂无 MCP server 条目）</div>';
+      return;
+    }
+    list.innerHTML = mcpData.servers.map(function (s) {
+      var args = (s.args || []).join(' ');
+      var env = Object.keys(s.env || {}).map(function (k) { return k + '=' + s.env[k]; }).join(' ');
+      var meta = s.command + (args ? ' ' + args : '') + (env ? ' ｜ env: ' + env : '');
+      return '<div class="file-row" data-name="' + escapeHtml(s.name) + '">'
+        + '<span class="fname" title="点击编辑">' + escapeHtml(s.name) + '</span>'
+        + '<span class="fmeta">' + escapeHtml(meta) + '</span>'
+        + '<span class="row-actions"><button data-del="' + escapeHtml(s.name) + '">删除</button></span>'
+        + '</div>';
+    }).join('');
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+/** 按名称查找当前 MCP 条目（供编辑表单回填） */
+function findMcpEntry(name) {
+  if (!mcpData || !Array.isArray(mcpData.servers)) return null;
+  for (var i = 0; i < mcpData.servers.length; i++) {
+    if (mcpData.servers[i].name === name) return mcpData.servers[i];
+  }
+  return null;
+}
+
+/** 打开 MCP 条目表单（entry 为 null 时为新增） */
+function openMcpForm(entry) {
+  mcpEditingName = entry ? entry.name : null;
+  document.getElementById('mcp-form-title').textContent = entry
+    ? '编辑 MCP Server：' + entry.name
+    : '新增 MCP Server';
+  document.getElementById('mcp-f-name').value = entry ? entry.name : '';
+  document.getElementById('mcp-f-command').value = entry ? entry.command : '';
+  document.getElementById('mcp-f-args').value = entry ? (entry.args || []).join(',') : '';
+  document.getElementById('mcp-f-env').value = entry
+    ? Object.keys(entry.env || {}).map(function (k) { return k + '=' + entry.env[k]; }).join('\n')
+    : '';
+  document.getElementById('mcp-form-overlay').classList.remove('hidden');
+}
+
+function closeMcpForm() {
+  document.getElementById('mcp-form-overlay').classList.add('hidden');
+  mcpEditingName = null;
+}
+
+/** env 文本（每行 KEY=VALUE）→ 对象；格式非法返回 null */
+function parseEnvText(text) {
+  var obj = {};
+  var lines = String(text).split(/\r?\n/);
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+    if (line === '') continue;
+    var idx = line.indexOf('=');
+    if (idx <= 0) return null;
+    obj[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+  }
+  return obj;
+}
+
+/** 提交 MCP 条目：name/command 必填；args 逗号分隔转数组；env 每行 KEY=VALUE 转对象 */
+async function submitMcpForm() {
+  var name = document.getElementById('mcp-f-name').value.trim();
+  var command = document.getElementById('mcp-f-command').value.trim();
+  if (name === '') { showToast('name 不能为空', true); return; }
+  if (command === '') { showToast('command 不能为空', true); return; }
+  var argsText = document.getElementById('mcp-f-args').value.trim();
+  var args = argsText === ''
+    ? []
+    : argsText.split(',').map(function (s) { return s.trim(); }).filter(function (s) { return s !== ''; });
+  var env = parseEnvText(document.getElementById('mcp-f-env').value);
+  if (env === null) { showToast('env 格式错误：每行应为 KEY=VALUE', true); return; }
+  try {
+    var data = await api('/api/mcp/entry', { method: 'PUT', body: { name: name, command: command, args: args, env: env } });
+    closeMcpForm();
+    showToast('已保存：' + data.path + (data.backedUp ? '（原文件已备份为 .bak）' : ''));
+    loadMcp();
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+/** 删除 MCP 条目（confirm 二次确认 → DELETE /api/mcp/entry） */
+async function deleteMcpEntry(name) {
+  if (!confirm('确认删除 MCP server 条目「' + name + '」？')) return;
+  try {
+    var data = await api('/api/mcp/entry?name=' + encodeURIComponent(name), { method: 'DELETE' });
+    showToast('已删除条目：' + name + (data.backedUp ? '（原文件已备份为 .bak）' : ''));
+    loadMcp();
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+// ============================================================
+// Settings 管理：原文查看/编辑 + 双重 JSON 校验 + 保存前 .bak 备份
+// ============================================================
+
+/** 加载 settings 原文（文件不存在时提示将创建的候选路径） */
+async function loadSettings() {
+  var hint = document.getElementById('settings-hint');
+  var ta = document.getElementById('settings-textarea');
+  if (!state.workdir.current) {
+    hint.textContent = '尚未选择工作目录。';
+    ta.value = '';
+    ta.disabled = true;
+    return;
+  }
+  try {
+    var data = await api('/api/settings');
+    if (data.exists) {
+      hint.textContent = '配置文件：' + data.path;
+      ta.value = data.raw || '';
+      ta.disabled = false;
+      ta.placeholder = 'settings 文件的 JSON 原文';
+    } else {
+      hint.textContent = '未找到 settings 文件，保存时将创建于：' + (data.path || '（定义中未配置候选路径）');
+      ta.value = '';
+      ta.disabled = false;
+      ta.placeholder = '文件尚未创建，输入 JSON 内容后保存（如 {}）';
+    }
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+/** 校验并保存 settings：客户端先 JSON.parse 预检，服务端再验并备份写回 */
+async function saveSettings() {
+  var ta = document.getElementById('settings-textarea');
+  if (ta.disabled) return;
+  try {
+    JSON.parse(ta.value);
+  } catch (e) {
+    showToast('JSON 格式错误：' + e.message, true);
+    return;
+  }
+  try {
+    var data = await api('/api/settings', { method: 'PUT', body: { raw: ta.value } });
+    showToast('已保存：' + data.path + (data.backedUp ? '（原文件已备份为 .bak）' : '（新文件已创建）'));
+    loadSettings();
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+// ============================================================
+// Tools 常用工具：左侧懒加载文件树 + 右侧快捷命令（git / package scripts）
+// ============================================================
+
+/** git 双平台通用快捷命令 */
+var QUICK_CMDS = ['git status', 'git branch', 'git pull', 'git push', 'git log --oneline -10', 'git diff'];
+
+function renderQuickCmds() {
+  document.getElementById('quick-cmds').innerHTML = QUICK_CMDS.map(function (cmd) {
+    return '<div class="cmd-row" data-cmd="' + escapeHtml(cmd) + '" title="点击在终端会话中执行">'
+      + '<span class="ccmd">' + escapeHtml(cmd) + '</span><span class="crun">运行 ▸</span></div>';
+  }).join('');
+}
+
+/** 点击快捷命令：新建 shell 会话 → 切到 Terminal 并激活 → 自动发送命令回车 */
+async function runQuickCommand(cmd) {
+  try {
+    var data = await api('/api/term', { method: 'POST', body: { kind: 'shell' } });
+    termSessions.push({ id: data.sessionId, kind: data.kind, cmd: data.cmd, cwd: data.cwd, alive: true });
+    switchTab('terminal');
+    renderTermTabs();
+    activateTermSession(data.sessionId);
+    await api('/api/term/' + encodeURIComponent(data.sessionId) + '/input', { method: 'POST', body: { data: cmd + '\n' } });
+    showToast('已在终端执行：' + cmd);
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+/** 拉取 package.json scripts 列表（不存在/为空显示空态） */
+async function loadScripts() {
+  var box = document.getElementById('scripts-list');
+  if (!state.workdir.current) {
+    box.innerHTML = '<div class="dash-empty">尚未选择工作目录。</div>';
+    return;
+  }
+  try {
+    var data = await api('/api/scripts');
+    var names = Object.keys(data.scripts || {});
+    if (!data.exists || !names.length) {
+      box.innerHTML = '<div class="dash-empty">（无 package.json scripts）</div>';
+      return;
+    }
+    box.innerHTML = names.map(function (name) {
+      return '<div class="cmd-row" data-script="' + escapeHtml(name) + '" title="' + escapeHtml(data.scripts[name]) + '">'
+        + '<span class="ccmd">npm run ' + escapeHtml(name) + ' —— ' + escapeHtml(data.scripts[name]) + '</span>'
+        + '<span class="crun">运行 ▸</span></div>';
+    }).join('');
+  } catch (e) {
+    showToast(e.message, true);
+  }
+}
+
+/** 在 container 内渲染 dirPath 的一层子节点（dirs 可展开、files 点击预览） */
+async function appendTreeChildren(container, dirPath, depth) {
+  var data;
+  try {
+    data = await api('/api/tree?path=' + encodeURIComponent(dirPath));
+  } catch (e) {
+    container.innerHTML = '<div class="dash-empty">' + escapeHtml(e.message) + '</div>';
+    return;
+  }
+  var base = data.path.replace(/[\\/]+$/, '');
+  var indent = depth * 16 + 6;
+  var html = '';
+  data.dirs.forEach(function (name) {
+    var child = base + '/' + name;
+    html += '<div class="tree-row" data-dir="' + escapeHtml(child) + '" data-depth="' + depth + '" style="padding-left:' + indent + 'px">'
+      + '<span class="tw">▸</span><span class="tname">' + escapeHtml(name) + '/</span></div>'
+      + '<div class="tree-children hidden"></div>';
+  });
+  data.files.forEach(function (name) {
+    var child = base + '/' + name;
+    html += '<div class="tree-row" data-file="' + escapeHtml(child) + '" data-depth="' + depth + '" style="padding-left:' + indent + 'px">'
+      + '<span class="tw"></span><span class="tname">' + escapeHtml(name) + '</span></div>';
+  });
+  if (html === '') {
+    html = '<div class="dash-empty" style="padding-left:' + indent + 'px">（空目录）</div>';
+  }
+  container.innerHTML = html;
+}
+
+/** 展开/折叠目录：首次展开时才请求子层（懒加载） */
+async function toggleTreeDir(row) {
+  var children = row.nextElementSibling;
+  if (!children || !children.classList.contains('tree-children')) return;
+  var tw = row.querySelector('.tw');
+  if (!children.classList.contains('hidden')) {
+    children.classList.add('hidden');
+    tw.textContent = '▸';
+    return;
+  }
+  if (!children.dataset.loaded) {
+    await appendTreeChildren(children, row.dataset.dir, Number(row.dataset.depth) + 1);
+    children.dataset.loaded = '1';
+  }
+  children.classList.remove('hidden');
+  tw.textContent = '▾';
+}
+
+/** 文件树点击委托：目录行展开/折叠，文件行打开只读预览 */
+function onTreeClick(e) {
+  var row = e.target.closest('.tree-row');
+  if (!row) return;
+  if (row.dataset.dir) {
+    toggleTreeDir(row);
+  } else if (row.dataset.file) {
+    openFilePreview(row.dataset.file);
+  }
+}
+
+/** 初始化文件树根层并显示工作目录路径 */
+function initTree() {
+  document.getElementById('tree-path').textContent = state.workdir.current || '';
+  var tree = document.getElementById('file-tree');
+  if (!state.workdir.current) {
+    tree.innerHTML = '<div class="dash-empty">尚未选择工作目录。</div>';
+    return;
+  }
+  tree.innerHTML = '<div class="dash-empty">加载中…</div>';
+  appendTreeChildren(tree, state.workdir.current, 0);
+}
+
+/** Tools 面板按需初始化：工作目录未变化时不重复加载 */
+function initTools() {
+  if (toolsWorkdir === state.workdir.current && toolsWorkdir !== null) return;
+  toolsWorkdir = state.workdir.current;
+  renderQuickCmds();
+  initTree();
+  loadScripts();
+}
+
+// ============================================================
+// 事件绑定
+// ============================================================
+
+// Tab 切换：display 控制面板显隐
+document.querySelectorAll('#tabs .tab').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    document.querySelectorAll('#tabs .tab').forEach(function (b) {
+      b.classList.toggle('active', b === btn);
+    });
+    document.querySelectorAll('main .panel').forEach(function (p) {
+      p.classList.toggle('active', p.id === 'panel-' + btn.dataset.tab);
+    });
+    onTabShown(btn.dataset.tab); // 管理页/工具页显示时按需加载数据
+  });
+});
+
+document.getElementById('btn-open-picker').addEventListener('click', openPicker);
+document.getElementById('btn-picker-close').addEventListener('click', closePicker);
+document.getElementById('btn-up').addEventListener('click', function () {
+  if (browseParent) browseTo(browseParent);
+});
+document.getElementById('btn-confirm-select').addEventListener('click', function () {
+  if (browsePath) selectPath(browsePath);
+});
+
+// 弹窗列表点击委托：最近目录直接选中，浏览区子目录进入
+document.getElementById('recents-list').addEventListener('click', function (e) {
+  var li = e.target.closest('li[data-path]');
+  if (li) selectPath(li.dataset.path);
+});
+document.getElementById('dirs-list').addEventListener('click', function (e) {
+  var li = e.target.closest('li[data-path]');
+  if (li) browseTo(li.dataset.path);
+});
+// 点击遮罩空白处关闭弹窗
+document.getElementById('picker-overlay').addEventListener('click', function (e) {
+  if (e.target === this) closePicker();
+});
+
+// ===== Dashboard 与弹窗绑定 =====
+document.getElementById('btn-scan').addEventListener('click', loadDashboard);
+document.getElementById('btn-definition').addEventListener('click', openDefinition);
+document.getElementById('btn-def-save').addEventListener('click', saveDefinition);
+document.getElementById('btn-def-close').addEventListener('click', closeDefinition);
+document.getElementById('btn-file-close').addEventListener('click', closeFilePreview);
+document.getElementById('file-overlay').addEventListener('click', function (e) {
+  if (e.target === this) closeFilePreview();
+});
+document.getElementById('def-overlay').addEventListener('click', function (e) {
+  if (e.target === this) closeDefinition();
+});
+// Dashboard 卡片点击委托：文件 → 预览弹窗；「去管理」→ 切换对应 Tab
+document.getElementById('dash-cards').addEventListener('click', function (e) {
+  var mg = e.target.closest('button[data-manage]');
+  if (mg) {
+    switchTab(mg.dataset.manage);
+    return;
+  }
+  var li = e.target.closest('li[data-path]');
+  if (li) openFilePreview(li.dataset.path);
+});
+
+// ===== 终端绑定 =====
+document.getElementById('btn-term-shell').addEventListener('click', function () { createTermSession('shell'); });
+document.getElementById('btn-term-cli').addEventListener('click', function () { createTermSession('cli'); });
+// 会话标签点击委托：命中 × 为关闭（=kill），其余为激活切换
+document.getElementById('term-tabs').addEventListener('click', function (e) {
+  var x = e.target.closest('.x');
+  if (x) {
+    e.stopPropagation();
+    closeTermSession(x.dataset.x);
+    return;
+  }
+  var tab = e.target.closest('.term-tab[data-id]');
+  if (tab) activateTermSession(tab.dataset.id);
+});
+
+// ===== Skills 绑定 =====
+document.getElementById('btn-skills-refresh').addEventListener('click', loadSkills);
+document.getElementById('btn-skill-new').addEventListener('click', createSkill);
+// 列表点击委托：命中删除按钮 → 删除；否则整行 → 编辑弹窗
+document.getElementById('skills-list').addEventListener('click', function (e) {
+  var del = e.target.closest('button[data-del]');
+  if (del) {
+    deleteSkill(del.dataset.del);
+    return;
+  }
+  var row = e.target.closest('.file-row[data-path]');
+  if (row) openSkillEditor(row.dataset.path);
+});
+document.getElementById('btn-edit-save').addEventListener('click', saveSkillEditor);
+document.getElementById('btn-edit-close').addEventListener('click', closeEditDialog);
+document.getElementById('edit-overlay').addEventListener('click', function (e) {
+  if (e.target === this) closeEditDialog();
+});
+
+// ===== MCP 绑定 =====
+document.getElementById('btn-mcp-refresh').addEventListener('click', loadMcp);
+document.getElementById('btn-mcp-add').addEventListener('click', function () { openMcpForm(null); });
+// 列表点击委托：命中删除按钮 → 删除；否则整行 → 编辑表单
+document.getElementById('mcp-list').addEventListener('click', function (e) {
+  var del = e.target.closest('button[data-del]');
+  if (del) {
+    deleteMcpEntry(del.dataset.del);
+    return;
+  }
+  var row = e.target.closest('.file-row[data-name]');
+  if (row) {
+    var entry = findMcpEntry(row.dataset.name);
+    if (entry) openMcpForm(entry);
+  }
+});
+document.getElementById('btn-mcp-form-save').addEventListener('click', submitMcpForm);
+document.getElementById('btn-mcp-form-close').addEventListener('click', closeMcpForm);
+document.getElementById('mcp-form-overlay').addEventListener('click', function (e) {
+  if (e.target === this) closeMcpForm();
+});
+
+// ===== Settings 绑定 =====
+document.getElementById('btn-settings-reload').addEventListener('click', loadSettings);
+document.getElementById('btn-settings-save').addEventListener('click', saveSettings);
+
+// ===== Tools 绑定 =====
+document.getElementById('file-tree').addEventListener('click', onTreeClick);
+// 快捷命令：git 命令与 package scripts 都在新 shell 会话中执行
+document.getElementById('quick-cmds').addEventListener('click', function (e) {
+  var row = e.target.closest('.cmd-row[data-cmd]');
+  if (row) runQuickCommand(row.dataset.cmd);
+});
+document.getElementById('scripts-list').addEventListener('click', function (e) {
+  var row = e.target.closest('.cmd-row[data-script]');
+  if (row) runQuickCommand('npm run ' + row.dataset.script);
+});
+
+// ============================================================
+// 启动加载：工作目录 + CLI 列表；无当前目录时自动弹出选择框
+// ============================================================
+
+(async function init() {
+  try {
+    var results = await Promise.all([api('/api/workdir'), api('/api/clis')]);
+    state.workdir = results[0];
+    state.clis = results[1].clis;
+  } catch (e) {
+    showToast(e.message, true);
+  }
+  renderStatusbar();
+  renderDashboard();
+  loadDashboard();   // Dashboard 项目扫描（无工作目录时展示引导空态）
+  refreshTermList(); // 页面刷新后恢复终端会话标签列表
+  if (!state.workdir.current) {
+    openPicker();
+  }
+})();
+</script>
+</body>
+</html>
